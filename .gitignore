@@ -1,0 +1,14 @@
+# Raw competition data
+train/
+val/
+sample_submission.csv
+Data_Description.md
+
+# Jupyter/Python
+.ipynb_checkpoints/
+__pycache__/
+*.pyc
+
+# OS files
+.DS_Store
+Thumbs.db
