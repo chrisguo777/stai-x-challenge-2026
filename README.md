@@ -206,7 +206,9 @@ Universal 表把三个 overdose 类别放在同一张表中，模型可以使用
 
 ### `notebooks/kaggle_submission.ipynb`(提交用)
 
-作用：**自包含的 Code-Competition 提交 notebook**。从原始竞赛数据现算图像特征、Dataset C 填补、训练 HGB+RF 集成、写出 `/kaggle/working/submission.csv`。不依赖本地 `outputs/`,可在隐藏 later window 上独立重跑。对应脚本 `kaggle_submission.py`(两者同源,本地可用 `STAIX_DATA=. python notebooks/kaggle_submission.py` 测试)。
+作用：**自包含的 Code-Competition 提交 notebook**。从原始竞赛数据现算图像特征、Dataset C 填补、训练 HGB+RF 集成、写出 `/kaggle/working/submission.csv`。不依赖本地 `outputs/` 或 01-12 / `statx_helpers.py`——所需逻辑全部内联,可在隐藏 later window 上独立重跑。对应脚本 `kaggle_submission.py`(两者同源,本地可用 `STAIX_DATA=. python notebooks/kaggle_submission.py` 测试)。
+
+**这就是最终要交的文件**:在 Kaggle 的 **Notebook** tab 提交这个 `.ipynb`(不是 `.py`,也不需要交 01-12)。本地已用 train/val 软链接验证可端到端运行、输出合规的 918 行提交。
 
 ## 共享代码文件
 
