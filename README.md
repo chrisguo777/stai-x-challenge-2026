@@ -36,7 +36,11 @@ STAT-X/
 
 - 榜分(1.328)和本地 5 折(1.725)**同量级**,证实排行榜指标就是**原始 rate 的 MAE**(排除 log / 归一化的可能)。
 - 榜分比本地 CV **更低(更好)**,说明 val/ 那 6 个 period 比训练分布略容易;本地 5 折是更保守的估计。
-- 排名 67/75 偏后,主要差距仍在最难的 `all_drugs`——后续上分重点是用更强 NLP 挖 `state_doh_release` 文本(关键词计数已验证无效),以及模型集成 / 调参。
+- 排名 67/75 偏后,主要差距仍在最难的 `all_drugs`——后续上分重点是用更强 NLP 挖 `state_doh_release` 文本(关键词计数已验证无效)。
+
+> 这是 **Code Competition**:最终在隐藏的 later window 上重跑你的 notebook,所以要提交 `kaggle_submission.ipynb`(自包含、从原始数据现算),而不是只交一个 CSV。
+>
+> 下一发候选:**HistGB + RandomForest 集成**(本地 5 折 1.7125,优于单 HistGB 1.7247),已封装进 `kaggle_submission.ipynb`,待提交验证榜分。
 
 ## 相对原始 fork 的改动总览
 
@@ -56,7 +60,11 @@ STAT-X/
 - **新增文本特征管线(重构自队友的 `STAIX-26.py`)**:
   - `09_text_features.py`：清洗版关键词文本特征,修掉原脚本所有 bug(硬编码路径、val 误用 train、train/val 关键词不一致、`overdose` 重复、死代码),用相对路径、能落盘 → `outputs/text_features.csv`。
   - `10_text_feature_gains.py`：5 折量化文本增益 → `outputs/text_feature_gains.csv`。结论是几乎零增益,故最终未采用(见「文本特征」)。
-- **评估方法升级为 5 折**：在 `statx_helpers.py` 新增 `cross_val_by_period`（折内重算天气填补、防泄漏），把 `04` / `05` / `07` / `08` / `10` 全部改为调用它,取代原来的单次 80/20。
+- **新增集成与提交管线**:
+  - `12_ensemble_validation.py`：5 折验证 HistGB + RandomForest 平均集成(MAE 1.7125,优于单 HistGB 1.7247)。
+  - `11_make_submission.py`：单模型 HistGB 提交(首次已交,Public LB 1.328)。
+  - `kaggle_submission.py` / `kaggle_submission.ipynb`：**自包含的 Code-Competition 提交 notebook**,从原始数据现算(图像特征、Dataset C、集成),用于隐藏 later-window 重跑。
+- **评估方法升级为 5 折**：在 `statx_helpers.py` 新增 `cross_val_by_period`（折内重算天气填补、防泄漏），把 `04` / `05` / `07` / `08` / `10` / `12` 全部改为调用它,取代原来的单次 80/20。
 - **新增结果产物**：`outputs/universal_period_model_comparison.csv`、`category_period_model_comparison.csv`、`image_feature_gains.csv`、`text_features.csv`、`text_feature_gains.csv`。
 - **README**：补充 5 折说明、图像/文本增益表、最终选型理由。
 
@@ -191,6 +199,14 @@ Universal 表把三个 overdose 类别放在同一张表中，模型可以使用
 ### 11. `notebooks/11_make_submission.py`
 
 作用：用最终方案(Universal + Dataset C + 图像特征 + HistGradientBoosting)在**全部**训练数据上训练,预测官方 `val/`,按 `sample_submission.csv` 的 `row_id` 对齐,生成根目录的 `submission.csv`(918 行,`row_id` + `rate_per_10000_ed_visits`)。文本特征不纳入(09/10 验证无增益)。
+
+### 12. `notebooks/12_ensemble_validation.py`
+
+作用：5 折验证 HistGB + RandomForest 平均集成。结论:集成 MAE 1.7125 < 单 HistGB 1.7247,值得用。
+
+### `notebooks/kaggle_submission.ipynb`(提交用)
+
+作用：**自包含的 Code-Competition 提交 notebook**。从原始竞赛数据现算图像特征、Dataset C 填补、训练 HGB+RF 集成、写出 `/kaggle/working/submission.csv`。不依赖本地 `outputs/`,可在隐藏 later window 上独立重跑。对应脚本 `kaggle_submission.py`(两者同源,本地可用 `STAIX_DATA=. python notebooks/kaggle_submission.py` 测试)。
 
 ## 共享代码文件
 
