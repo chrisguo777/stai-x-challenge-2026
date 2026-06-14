@@ -147,14 +147,13 @@ def build_preprocessor(X: pd.DataFrame) -> ColumnTransformer:
     ], remainder="drop")
 
 
-# -------------------------------------------------------------------------------- main
-def main() -> None:
-    print(f"data root: {DATA}")
+# -------------------------------------------------------------------------------- model
+def build_predictions(sub: pd.DataFrame) -> np.ndarray:
+    """Full validated pipeline. Returns one prediction per sample_submission row."""
     target = pd.read_csv(f"{DATA}/train/dose_sys_train.csv")
     target = target[target["overdose_category"].isin(SCORING)]
     tcov = pd.read_csv(f"{DATA}/train/covariates.csv")
     vcov = pd.read_csv(f"{DATA}/val/covariates.csv")
-    sub = pd.read_csv(f"{DATA}/sample_submission.csv")
 
     train_raw = target.merge(tcov, on=KEYS, how="left")
     val_raw = sub.merge(vcov, on=KEYS, how="left")
@@ -194,15 +193,37 @@ def main() -> None:
         pipe = Pipeline([("pre", build_preprocessor(X_train)), ("m", est)])
         pipe.fit(X_train, y_train)
         preds.append(weights[name] * np.clip(pipe.predict(X_val), 0, None))
-    ensemble = np.sum(preds, axis=0)
+    return np.sum(preds, axis=0)
+
+
+# -------------------------------------------------------------------------------- main
+def main() -> None:
+    print(f"data root: {DATA}")
+    # sample_submission alone defines the required output (row_ids); read it first
+    # so we can ALWAYS write a valid submission.csv even if modeling fails -- a
+    # Kaggle code competition rejects a notebook version with no output file.
+    sub = pd.read_csv(f"{DATA}/sample_submission.csv")
+
+    try:
+        pred = build_predictions(sub)
+    except Exception as exc:                          # noqa: BLE001 - must still emit a file
+        import traceback
+        traceback.print_exc()
+        fallback = float(pd.read_csv(f"{DATA}/train/dose_sys_train.csv")
+                         .loc[lambda d: d["overdose_category"].isin(SCORING), TARGET].median())
+        print(f"\n[WARN] pipeline failed ({exc}); writing median fallback {fallback:.3f} "
+              "so the notebook still produces an output file")
+        pred = np.full(len(sub), fallback)
 
     out = sub[["row_id"]].copy()
-    out[TARGET] = ensemble
+    out[TARGET] = np.clip(pred, 0, None)
     assert len(out) == len(sub) and out["row_id"].is_unique and out[TARGET].notna().all()
 
+    os.makedirs(WORK, exist_ok=True)
     path = f"{WORK}/submission.csv"
     out.to_csv(path, index=False)
     print(f"\nwrote {path}  ({len(out)} rows)")
+    print("files in working dir:", [f for f in os.listdir(WORK) if f.endswith(".csv")])
     print(out[TARGET].describe().round(3).to_string())
 
 
