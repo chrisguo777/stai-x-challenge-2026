@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 
 from sklearn.compose import ColumnTransformer
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, GroupKFold
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.pipeline import Pipeline
 from sklearn.linear_model import Ridge, ElasticNet
@@ -180,6 +180,53 @@ def predict_mean_baseline(train_df, val_df, group_col=None, target_col=TARGET_CO
         return pd.Series(global_mean, index=val_df.index)
     group_mean = train_df.groupby(group_col)[target_col].mean()
     return val_df[group_col].map(group_mean).fillna(global_mean)
+
+
+def cross_val_by_period(
+    raw_df,
+    method,
+    dataset_name,
+    prediction_type=None,
+    n_splits=5,
+    drop_category=False,
+    period_col=PERIOD_COL,
+    target_col=TARGET_COL,
+):
+    """5-fold GroupKFold by period, averaged across folds.
+
+    Every period_id lands in exactly one fold (no period spans train/test), the
+    same no-leak principle as split_by_period — but each period is evaluated
+    once, so the score has lower variance than a single 80/20 holdout.
+
+    Pass the RAW merged table (NOT the pre-imputed *_train/_val.csv): weather
+    imputation is re-fit INSIDE each fold (test imputed from that fold's train
+    via reference=...), so Dataset B/C never leak statistics across folds.
+
+    Returns one averaged row per model, same schema as fit_and_score_dataset.
+    """
+    data = raw_df.dropna(subset=[target_col]).reset_index(drop=True)
+    groups = data[period_col].to_numpy()
+    gkf = GroupKFold(n_splits=n_splits)
+
+    fold_rows = []
+    for tr_idx, te_idx in gkf.split(data, data[target_col], groups):
+        train_raw = data.iloc[tr_idx]
+        val_raw = data.iloc[te_idx]
+        train_df = make_dataset(train_raw, method)
+        val_df = make_dataset(val_raw, method, reference=train_raw)
+        if drop_category:
+            train_df = train_df.drop(columns=["overdose_category"], errors="ignore")
+            val_df = val_df.drop(columns=["overdose_category"], errors="ignore")
+        fold_rows.extend(
+            fit_and_score_dataset(
+                train_df, val_df, dataset_name,
+                prediction_type=prediction_type, target_col=target_col,
+            )
+        )
+
+    keys = ["dataset", "model"] + (["prediction_type"] if prediction_type is not None else [])
+    averaged = pd.DataFrame(fold_rows).groupby(keys, as_index=False)[["RMSE", "MAE", "R2"]].mean()
+    return averaged.to_dict("records")
 
 
 def fit_and_score_dataset(train_df, val_df, dataset_name, prediction_type=None, target_col=TARGET_COL):
