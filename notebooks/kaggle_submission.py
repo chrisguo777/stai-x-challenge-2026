@@ -9,10 +9,13 @@ outputs/*.csv. It reproduces the full validated pipeline from scratch:
     + Dataset C weather imputation (similar-state -> period-median -> global,
       all computed from TRAIN only)
     + 8 MAT-density image features (computed inline from the PNGs)
-    + ensemble of HistGradientBoosting and RandomForest (simple average)
+    + 0.7/0.3 ensemble of tuned HistGradientBoosting (absolute_error loss) and
+      RandomForest
 
-Local 5-fold GroupKFold-by-period MAE: 1.7125 (beats single HistGB 1.7247).
-Text features (keyword counts) were tested and gave no gain, so are not used.
+Local 5-fold GroupKFold-by-period MAE: 1.7086 (tuned HistGB + 0.7/0.3 blend;
+beats the 0.5/0.5 average 1.7125 and single default HistGB 1.7247). Text
+features (keyword counts and TF-IDF) and multi-task training on the 5 non-scored
+categories were all tested and gave no gain, so are not used.
 
 Robust to the hidden re-run: data root is auto-detected, weather/image NaNs fall
 back to train medians, and unseen categories/periods are handled by the encoder.
@@ -174,18 +177,24 @@ def main() -> None:
     y_train = train_ds[TARGET].to_numpy()
     X_val = val_ds.drop(columns=drop, errors="ignore").reindex(columns=X_train.columns)
 
+    # Validated on 5-fold GroupKFold-by-period (notebook 14): HistGB with
+    # absolute_error loss + light tuning beats the default, and a 0.7/0.3
+    # HistGB/RF blend beats the 0.5/0.5 average (1.7086 vs 1.7125).
     models = {
-        "HistGB": HistGradientBoostingRegressor(random_state=42),
+        "HistGB": HistGradientBoostingRegressor(
+            loss="absolute_error", learning_rate=0.05, max_iter=600,
+            max_leaf_nodes=31, l2_regularization=1.0, random_state=42),
         "RandomForest": RandomForestRegressor(
             n_estimators=300, min_samples_leaf=5, random_state=42, n_jobs=-1),
     }
+    weights = {"HistGB": 0.7, "RandomForest": 0.3}
     preds = []
     for name, est in models.items():
         print(f"fitting {name} ...")
         pipe = Pipeline([("pre", build_preprocessor(X_train)), ("m", est)])
         pipe.fit(X_train, y_train)
-        preds.append(np.clip(pipe.predict(X_val), 0, None))
-    ensemble = np.mean(preds, axis=0)
+        preds.append(weights[name] * np.clip(pipe.predict(X_val), 0, None))
+    ensemble = np.sum(preds, axis=0)
 
     out = sub[["row_id"]].copy()
     out[TARGET] = ensemble
